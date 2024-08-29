@@ -8,13 +8,20 @@ export class WhatsappService {
   private client: Client;
 
   constructor() {
-    this.client = new Client({
+    /*this.client = new Client({
         authStrategy: new LocalAuth(),
-    });
+    }); */
 
     /*this.client = new Client({
         authStrategy: new LocalAuth({ clientId: "client-one" }),
       });*/
+
+    this.client = new Client({
+      authStrategy: new LocalAuth(),
+      puppeteer: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      },
+    });
 
     this.client.on('qr', (qr) => {
         qrcode.generate(qr, { small: true });
