@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Client, LocalAuth, MessageMedia } from 'whatsapp-web.js';
 import axios from 'axios';
 import * as qrcode from 'qrcode-terminal';
+import * as dotenv from 'dotenv';
+
+dotenv.config(); // Mengambil konfigurasi dari .env
 
 @Injectable()
 export class WhatsappService {
@@ -49,7 +52,8 @@ export class WhatsappService {
 
   async sendMessage(number: string, message: string, apikey: string) {
     //await this.client.initialize(); // Ensure client is initialize
-    if (apikey == '111111') {
+    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
+    if (apikey == validApiKey) {
     const chatId = `${number}@c.us`; // Format nomor telepon untuk WhatsApp
     try {
       await this.client.sendMessage(chatId, message);
@@ -66,7 +70,8 @@ export class WhatsappService {
 
   async sendImage(number: string, imageUrl: string, caption: string, apikey: string) {
     //await this.client.initialize(); // Ensure client is initialize
-    if (apikey == '111111') {
+    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
+    if (apikey == validApiKey) {
     const chatId = `${number}@c.us`;
     try {
       // Download image
