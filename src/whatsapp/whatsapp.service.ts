@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Client, LocalAuth, MessageMedia, Chat, Message } from 'whatsapp-web.js';
 import axios from 'axios';
 import * as qrcode from 'qrcode-terminal';
@@ -10,15 +10,11 @@ dotenv.config(); // Mengambil konfigurasi dari .env
 export class WhatsappService {
   private client: Client;
 
+  // Array berisi nomor-nomor yang akan mendapatkan balasan otomatis
+  //private targetNumbers = process.env.numbers;
+  private config = JSON.parse(process.env.config);
+
   constructor() {
-    /*this.client = new Client({
-        authStrategy: new LocalAuth(),
-    }); */
-
-    /*this.client = new Client({
-        authStrategy: new LocalAuth({ clientId: "client-one" }),
-      });*/
-
     this.client = new Client({
       authStrategy: new LocalAuth(),
       puppeteer: {
@@ -47,7 +43,36 @@ export class WhatsappService {
       this.client.initialize(); // Re-initialize the client
     });
 
+    // Tambahkan handler untuk pesan masuk
+    this.client.on('message', (message) => this.handleIncomingMessage(message));
+
     this.client.initialize();
+  }
+
+  // Fungsi untuk menangani pesan masuk
+  private async handleIncomingMessage(message: Message): Promise<void> {
+    const chat = await message.getChat();
+    const targetNumbers: string[] = this.config.numbers;
+    const targetGroups: string[] = this.config.groups;
+    if (targetNumbers.includes(message.from)) {
+      // Logika untuk balasan otomatis
+      if (message.body.toLowerCase() === 'halo') {
+        chat.sendMessage(this.config.halo);
+      } else if (message.body.toLowerCase() === 'info') {
+        chat.sendMessage(this.config.info);
+      } else if (message.body.toLowerCase() === 'sisy') {
+        chat.sendMessage(this.config.sisy);
+      }
+    } else if (chat.isGroup && targetGroups.includes(chat.id._serialized)) {
+      // Logika untuk balasan otomatis di dalam grup
+      if (message.body.toLowerCase() === 'halo') {
+        await chat.sendMessage(this.config.halo);
+      } else if (message.body.toLowerCase() === 'info') {
+        await chat.sendMessage(this.config.info);
+      } else if (message.body.toLowerCase() === 'sisy') {
+        await chat.sendMessage(this.config.sisy);
+      }
+    }
   }
 
   async sendMessage(number: string, message: string, apikey: string) {
@@ -93,16 +118,18 @@ export class WhatsappService {
     }
   }
 
-  async getAllGroups(): Promise<{ name: string; id: string }[]> {
-    const chats = await this.client.getChats();
-    const groups = chats
-      .filter(chat => chat.isGroup)
-      .map((group: Chat) => ({
-        name: group.name,
-        id: group.id._serialized,
-      }));
-
-    return groups;
+  async getAllGroups(apikey: string): Promise<{ name: string; id: string }[]> {
+    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
+    if (apikey == validApiKey) {
+      const chats = await this.client.getChats();
+      const groups = chats
+        .filter(chat => chat.isGroup)
+        .map((group: Chat) => ({
+          name: group.name,
+          id: group.id._serialized,
+        }));
+      return groups;
+    }
   }
 
   // Fungsi untuk mengirim pesan ke grup berdasarkan nama atau ID grup
