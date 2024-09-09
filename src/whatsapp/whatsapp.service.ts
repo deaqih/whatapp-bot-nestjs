@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { Client, LocalAuth, MessageMedia, Chat, Message } from 'whatsapp-web.js';
 import axios from 'axios';
 import * as qrcode from 'qrcode-terminal';
@@ -76,74 +76,249 @@ export class WhatsappService {
   }
 
   async sendMessage(number: string, message: string, apikey: string) {
-    //await this.client.initialize(); // Ensure client is initialize
-    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
-    if (apikey == validApiKey) {
-      const chatId = `${number}@c.us`; // Format nomor telepon untuk WhatsApp
-      try {
-        await this.client.sendMessage(chatId, message);
-        return { status: 'success', message: `Message sent to ${number}` };
-      } catch (error) {
-        console.error('Error sending message:', error);
-        return { status: 'error', message: `Failed to send message to ${number}` };
-      }
+    const validApiKey = process.env.API_KEY; // Ambil API Key dari environment
+    if (apikey !== validApiKey) {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.UNAUTHORIZED,
+        message: 'Invalid API key',
+      }, HttpStatus.UNAUTHORIZED); // 401 Unauthorized jika API key tidak cocok
     }
 
-    else {
-      return 'salah';
+    // Validasi jika message kosong atau tidak valid
+    if (!message || message.trim() === '') {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.BAD_REQUEST,
+        message: 'Message cannot be empty or invalid',
+      }, HttpStatus.BAD_REQUEST); // 400 Bad Request jika message kosong atau invalid
+    }
+
+    const chatId = `${number}@c.us`; // Format nomor telepon untuk WhatsApp
+    try {
+      await this.client.sendMessage(chatId, message);
+      return {
+        status: 'success',
+        httpCode: HttpStatus.OK, // 200 OK
+        message: `Message sent to ${number}`,
+        data: { number, message }, // Berikan data yang berhasil dikirim
+      };
+    } catch (error) {
+      console.error('Error sending message:', error);
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.INTERNAL_SERVER_ERROR, // 500 Internal Server Error
+        message: `Failed to send message to ${number}`,
+        error: error.message, // Sertakan pesan error
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   async sendImage(number: string, imageUrl: string, caption: string, apikey: string) {
-    //await this.client.initialize(); // Ensure client is initialize
-    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
-    if (apikey == validApiKey) {
-      const chatId = `${number}@c.us`;
-      try {
-        // Download image
-        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-        const media = new MessageMedia('image/jpeg', Buffer.from(response.data).toString('base64'));
-
-        // Send image with caption
-        await this.client.sendMessage(chatId, media, { caption });
-        return { status: 'success', message: `Image sent to ${number}` };
-      } catch (error) {
-        console.error('Error sending image:', error);
-        return { status: 'error', message: `Failed to send image to ${number}` };
-      }
+    const validApiKey = process.env.API_KEY; // Ambil API Key dari environment
+    // Validasi API Key
+    if (apikey !== validApiKey) {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.UNAUTHORIZED,
+        message: 'Invalid API key',
+      }, HttpStatus.UNAUTHORIZED); // 401 Unauthorized jika API key tidak cocok
     }
 
-    else {
-      return 'salah';
+    // Validasi jika caption kosong atau tidak valid
+    if (!caption || caption.trim() === '') {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.BAD_REQUEST,
+        message: 'Caption cannot be empty or invalid',
+      }, HttpStatus.BAD_REQUEST); // 400 Bad Request jika caption kosong atau invalid
+    }
+
+    // Validasi URL gambar
+    if (!imageUrl || !/^https?:\/\/.+\.(jpg|jpeg|png|gif)$/i.test(imageUrl)) {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid image URL format',
+      }, HttpStatus.BAD_REQUEST); // 400 Bad Request jika URL gambar tidak valid
+    }
+
+    const chatId = `${number}@c.us`; // Format nomor telepon untuk WhatsApp
+
+    try {
+      // Download image
+      const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+      // Deteksi content-type dari gambar yang diunduh
+      const contentType = response.headers['content-type'];
+      const media = new MessageMedia(contentType, Buffer.from(response.data).toString('base64'));
+
+      // Kirim gambar dengan caption
+      await this.client.sendMessage(chatId, media, { caption });
+
+      // Kembalikan respons sukses
+      return {
+        status: 'success',
+        httpCode: HttpStatus.OK, // 200 OK
+        message: `Image sent to ${number}`,
+        data: { number, caption, imageUrl }, // Kembalikan data lengkap yang dikirim
+      };
+    } catch (error) {
+      console.error('Error sending image:', error);
+
+      // Kembalikan error yang lebih detail
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.INTERNAL_SERVER_ERROR, // 500 Internal Server Error
+        message: `Failed to send image to ${number}`,
+        error: error.response ? error.response.data : error.message, // Sertakan pesan error lebih detail
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async getAllGroups(apikey: string): Promise<{ name: string; id: string }[]> {
-    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
-    if (apikey == validApiKey) {
+  async checkSession(apikey: string): Promise<{ statusCode: number, message: string, data?: any }> {
+    const validApiKey = process.env.API_KEY; // Mengambil API key dari environment variables
+
+    // Validasi API Key
+    if (apikey !== validApiKey) {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.UNAUTHORIZED,
+        message: 'Invalid API key',
+      }, HttpStatus.UNAUTHORIZED); // 401 Unauthorized jika API key tidak cocok
+    }
+    if (this.client.info && this.client.info.pushname) {
+      return { 
+        statusCode: HttpStatus.OK,  // Mengembalikan status HTTP 200
+        message: 'WhatsApp session is connected',
+        data: {
+          pushname: this.client.info.pushname,
+          phoneNumber: this.client.info.wid.user,
+        }
+      };
+    } else {
+      return { 
+        statusCode: HttpStatus.BAD_REQUEST,  // Mengembalikan status HTTP 400
+        message: 'WhatsApp session is not connected'
+      };
+    }
+  }
+
+  async getAllGroups(apikey: string): Promise<{ status: string; httpCode: number; message: string; data?: { name: string; id: string }[] }> {
+    const validApiKey = process.env.API_KEY; // Mengambil API key dari environment variables
+
+    // Validasi API Key
+    if (apikey !== validApiKey) {
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.UNAUTHORIZED,
+        message: 'Invalid API key',
+      }, HttpStatus.UNAUTHORIZED); // 401 Unauthorized jika API key tidak cocok
+    }
+
+    try {
+      // Ambil semua chats
       const chats = await this.client.getChats();
+
+      // Filter chats yang berupa grup
       const groups = chats
         .filter(chat => chat.isGroup)
         .map((group: Chat) => ({
           name: group.name,
           id: group.id._serialized,
         }));
-      return groups;
+
+      // Kembalikan response sukses
+      return {
+        status: 'success',
+        httpCode: HttpStatus.OK, // 200 OK
+        message: 'Groups retrieved successfully',
+        data: groups,
+      };
+    } catch (error) {
+      // Jika terjadi error, tangani dengan HttpException
+      console.error('Error retrieving groups:', error);
+      throw new HttpException({
+        status: 'error',
+        httpCode: HttpStatus.INTERNAL_SERVER_ERROR, // 500 Internal Server Error
+        message: 'Failed to retrieve groups',
+        error: error.message,
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   // Fungsi untuk mengirim pesan ke grup berdasarkan nama atau ID grup
-  async sendMessageToGroup(groupNameOrId: string, message: string, apikey: string): Promise<Message | void> {
-    const validApiKey = process.env.API_KEY; // Mengambil API key dari variabel lingkungan
-    if (apikey == validApiKey) {
-      const chats = await this.client.getChats();
-      const group = chats.find(chat => chat.isGroup && (chat.name === groupNameOrId || chat.id._serialized === groupNameOrId));
+  async sendMessageToGroup(groupNameOrId: string, message: string, apikey: string): Promise<{ status: string; httpCode: number; message: string; data?: { groupName: string; messageId: string; message: string } }> {
+    // Mengambil API key dari variabel lingkungan
+    const validApiKey = process.env.API_KEY;
 
-      if (!group) {
-        throw new Error(`Group with name or ID "${groupNameOrId}" not found`);
-      }
+    // Cek validitas API key
+    if (apikey !== validApiKey) {
+      throw new HttpException(
+        {
+          status: 'error',
+          httpCode: HttpStatus.UNAUTHORIZED,
+          message: 'Invalid API key',
+        },
+        HttpStatus.UNAUTHORIZED
+      ); // 401 Unauthorized jika API key tidak cocok
+    }
 
-      return await this.client.sendMessage(group.id._serialized, message);
+    // Validasi message tidak kosong
+    if (!message || message.trim() === '') {
+      throw new HttpException(
+        {
+          status: 'error',
+          httpCode: HttpStatus.BAD_REQUEST,
+          message: 'Message cannot be empty',
+        },
+        HttpStatus.BAD_REQUEST
+      ); // 400 Bad Request jika pesan kosong
+    }
+
+    // Dapatkan semua chat dan cari group berdasarkan nama atau ID
+    const chats = await this.client.getChats();
+    const group = chats.find(
+      chat =>
+        chat.isGroup &&
+        (chat.name === groupNameOrId || chat.id._serialized === groupNameOrId)
+    );
+
+    // Jika group tidak ditemukan
+    if (!group) {
+      throw new HttpException(
+        {
+          status: 'error',
+          httpCode: HttpStatus.NOT_FOUND,
+          message: `Group with name or ID "${groupNameOrId}" not found`,
+        },
+        HttpStatus.NOT_FOUND
+      ); // 404 Not Found jika grup tidak ditemukan
+    }
+
+    // Kirim pesan ke grup yang ditemukan
+    try {
+      const sentMessage = await this.client.sendMessage(group.id._serialized, message);
+      return {
+        status: 'success',
+        httpCode: HttpStatus.OK, // 200 OK jika pesan berhasil dikirim
+        message: `Message sent to group "${groupNameOrId}"`,
+        data: {
+          groupName: group.name,
+          messageId: sentMessage.id._serialized,
+          message: message
+        },
+      };
+    } catch (error) {
+      // Penanganan error saat pengiriman pesan
+      throw new HttpException(
+        {
+          status: 'error',
+          httpCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: `Failed to send message to group "${groupNameOrId}"`,
+          error: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR
+      ); // 500 Internal Server Error jika terjadi kesalahan
     }
   }
 }

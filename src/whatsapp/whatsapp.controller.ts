@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Injectable, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Res, Injectable, UseGuards } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { ThrottlerModule, SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Response } from 'express';
 import * as dotenv from 'dotenv';
 
 @Controller('whatsapp')
@@ -25,12 +26,6 @@ export class WhatsappController {
     return await this.whatsappService.sendImage(number, imageUrl, caption, apikey);
   }
 
-  /*@Get('groups')
-  async getGroups() {
-    const groups = await this.whatsappService.getAllGroups();
-    return groups;
-  }*/
-
   @Post('groups')
   async getGroups(
     @Body('apikey') apikey: string,
@@ -44,7 +39,21 @@ export class WhatsappController {
     @Body('message') message: string,
     @Body('apikey') apikey: string,
   ) {
-    await this.whatsappService.sendMessageToGroup(groupNameOrId, message, apikey);
-    return { status: 'Message sent to group' };
+    //await this.whatsappService.sendMessageToGroup(groupNameOrId, message, apikey);
+    // return { status: 'Message sent to group' };
+    return await this.whatsappService.sendMessageToGroup(groupNameOrId, message, apikey);
+  }
+
+  @Post('check-session')
+  async checkSession(@Body('apikey') apikey: string, @Res() res: Response) {
+    // Panggil service untuk cek sesi WhatsApp dengan API Key
+    const sessionStatus = await this.whatsappService.checkSession(apikey);
+
+    // Mengembalikan respons secara langsung berdasarkan hasil dari service
+    return res.status(sessionStatus.statusCode).json({
+      statusCode: sessionStatus.statusCode,
+      message: sessionStatus.message,
+      data: sessionStatus.data || null
+    });
   }
 }
